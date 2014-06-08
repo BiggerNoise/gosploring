@@ -23,7 +23,7 @@ var _ = Describe("Testing some Pointers", func () {
 		deadmeat = append(deadmeat, Dummy{Value: 92})
 		deadmeat = append(deadmeat, Dummy{Value: 93})
 		ChangeStuff(&deadmeat[3], 89)
-	}) 
+	})
 
 	It("Stuff was changed", func () {
 		Expect(deadmeat[3].Value).To(Equal(89))
@@ -32,5 +32,5 @@ var _ = Describe("Testing some Pointers", func () {
 		ChangeStuff(&deadmeat[2], 37)
 		Expect(deadmeat[2].Value).To(Equal(37))
 	})
-	
+	// Other pointer related items here
 })
