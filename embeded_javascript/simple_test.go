@@ -11,6 +11,8 @@ import (
 	_ "github.com/robertkrimen/otto/underscore"
 )
 
+type RunContext struct{}
+
 var _ = Describe("just a simple test", func() {
 	It("Performs the most basic operation possible", func() {
 		vm := otto.New()
@@ -36,16 +38,20 @@ var _ = Describe("just a simple test", func() {
 		Expect(result.ToString()).To(Equal("this-is-ok"))
 	})
 
-	makeFloat := func(input interface{}) float64 {
-		switch value := input.(type) {
-		case float32:
-		case float64:
-			return value
-		default:
-			fmt.Printf("unexpected type %T", value)
-		}
-		return 0.0
-	}
+	It("Allows field functions to be registered and then called - passing argument to call", func() {
+		vm := otto.New()
+		customFunction := `return field + "-ok"`
+		functionId := "custom_XX_232354"
+
+		// Once - compiles the function into the runtime
+		vm.Run(fmt.Sprintf("var %s = function(field) { %s };", functionId, customFunction))
+		context := &(RunContext{})
+
+		// Each Time
+		result, err := vm.Call(functionId, context, "this-is")
+		Expect(err).To(BeNil())
+		Expect(result.ToString()).To(Equal("this-is-ok"))
+	})
 
 	It("Allows record functions to be registered and then called", func() {
 		vm := otto.New()
@@ -55,8 +61,7 @@ var _ = Describe("just a simple test", func() {
 			} else {
 				record.paid = record.amount
 			}
-			record.status = "You're a complete choad."
-			delete record.credit
+			record.status = "You're my favorite deputy."
 		`
 		functionId := "custom_XX_232354"
 		functionArgument := fmt.Sprintf("%s_Arg", functionId)
@@ -77,7 +82,38 @@ var _ = Describe("just a simple test", func() {
 		_, err := vm.Run(functionInvocation)
 		fmt.Println(record)
 		Expect(err).To(BeNil())
-		Expect(makeFloat(record["paid"])).To(Equal(-345.45))
+		Expect(record["paid"]).To(Equal(-345.45))
+	})
+
+	// Doesn't work.  https://github.com/robertkrimen/otto/pull/92 is a request for clarification
+	PIt("Allows record functions to be registered and then called - passing argument to call", func() {
+		vm := otto.New()
+		customFunction := `
+			if(record.credit) {
+				record.paid = -1 * record.amount
+			} else {
+				record.paid = record.amount
+			}
+			record.status = "You're my favorite deputy."
+		`
+		functionId := "custom_XX_232354"
+		// Once
+		vm.Run(fmt.Sprintf("var %s = function(record) { %s };", functionId, customFunction))
+		context := &(RunContext{})
+
+		record := map[string]interface{}{
+			"amount": 345.45,
+			"credit": true,
+		}
+
+		fmt.Println()
+		fmt.Println(record)
+
+		// Each Time
+		_, err := vm.Call(functionId, context, record)
+		fmt.Println(record)
+		Expect(err).To(BeNil())
+		Expect(record["paid"]).To(Equal(-345.45))
 	})
 
 	It("Divide numbers by 1000 with Javascript", func() {
@@ -91,19 +127,34 @@ var _ = Describe("just a simple test", func() {
 		vm.Run(fmt.Sprintf("var %s = function(field) { %s };", functionId, customFunction))
 
 		jsRun := func(b *testing.B) {
-			var lastResult int64
 			for i := 1; i <= b.N; i++ {
 				input := i * 1000
 				vm.Set(functionArgument, input)
-				res, _ := vm.Run(functionInvocation)
-				lastResult, _ = res.ToInteger()
+				vm.Run(functionInvocation)
 			}
-			fmt.Println(lastResult)
 		}
 		jsBench := testing.Benchmark(jsRun)
-		fmt.Println(jsBench)
+		fmt.Println("Divide numbers by 1000 with Javascript Run(): ", jsBench)
 
 	})
+
+	It("Divide numbers by 1000 with Javascript Call", func() {
+		vm := otto.New()
+		customFunction := `return field / 1000`
+		functionId := "custom_XX_232354"
+		// Once
+		vm.Run(fmt.Sprintf("var %s = function(field) { %s };", functionId, customFunction))
+
+		jsRun := func(b *testing.B) {
+			for i := 1; i <= b.N; i++ {
+				input := i * 1000
+				vm.Call(functionId, input)
+			}
+		}
+		jsBench := testing.Benchmark(jsRun)
+		fmt.Println("Divide numbers by 1000 with Javascript Call(): ", jsBench)
+	})
+
 	It("Divide numbers by 1000 with Go", func() {
 
 		calc := func(field int) int {
@@ -111,15 +162,13 @@ var _ = Describe("just a simple test", func() {
 		}
 
 		run := func(b *testing.B) {
-			var lastResult int64
 			for i := 1; i <= b.N; i++ {
 				input := i * 1000
-				lastResult = int64(calc(input))
+				calc(input)
 			}
-			fmt.Println(lastResult)
 		}
 		bench := testing.Benchmark(run)
-		fmt.Println(bench)
+		fmt.Println("Divide numbers by 1000 with Go: ", bench)
 	})
 	inputKeys := []int{42, 81, 17, 2, 89, 84}
 
@@ -141,17 +190,47 @@ var _ = Describe("just a simple test", func() {
 		vm.Run(fmt.Sprintf("var %s = function(field) { %s };", functionId, customFunction))
 
 		jsRun := func(b *testing.B) {
-			var lastResult string
 			for i := 0; i < b.N; i++ {
 				input := inputKeys[i%len(inputKeys)]
 				vm.Set(functionArgument, input)
-				res, _ := vm.Run(functionInvocation)
-				lastResult, _ = res.ToString()
+				vm.Run(functionInvocation)
 			}
-			fmt.Println(lastResult)
 		}
 		jsBench := testing.Benchmark(jsRun)
-		fmt.Println(jsBench)
+		fmt.Println("Simple Lookup Table with Javascript: ", jsBench)
+	})
+
+	It("Simple Record Function with Javascript", func() {
+		vm := otto.New()
+
+		customFunction := `
+			if(record.credit) {
+				record.paid = -1 * record.amount
+			} else {
+				record.paid = record.amount
+			}
+			record.status = "You're my favorite deputy."
+		`
+
+		functionId := "custom_XX_232354"
+		functionArgument := fmt.Sprintf("%s_Arg", functionId)
+		functionInvocation := fmt.Sprintf("%s(%s);", functionId, functionArgument)
+		// Once
+		vm.Run(fmt.Sprintf("var %s = function(record) { %s };", functionId, customFunction))
+
+		jsRun := func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				input := map[string]interface{}{
+					"amount": 45.45 * float64(i),
+					"credit": true,
+				}
+
+				vm.Set(functionArgument, input)
+				vm.Run(functionInvocation)
+			}
+		}
+		jsBench := testing.Benchmark(jsRun)
+		fmt.Println("Simple Record Function with Javascript: ", jsBench)
 	})
 
 	It("Simple Lookup Table with Go", func() {
@@ -170,15 +249,13 @@ var _ = Describe("just a simple test", func() {
 		}
 
 		run := func(b *testing.B) {
-			var lastResult string
 			for i := 0; i < b.N; i++ {
 				input := inputKeys[i%len(inputKeys)]
-				lastResult = lookup(input)
+				lookup(input)
 			}
-			fmt.Println(lastResult)
 		}
 		bench := testing.Benchmark(run)
-		fmt.Println(bench)
+		fmt.Println("Simple Lookup Table with Go: ", bench)
 
 	})
 })
